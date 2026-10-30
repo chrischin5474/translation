@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>雙語智慧課堂 - 即時大字幕翻譯</title>
+  <style>
+    :root {
+      --bg-main: #0b1120;
+      --card-bg: #1e293b;
+      --card-border: #3b82f6;
+      --text-highlight: #38bdf8;
+      --text-sub: #94a3b8;
+      --text-white: #ffffff;
+      
+      /* 中翻英主題色 (藍色調) */
+      --mode-zh-border: #3b82f6;
+      --mode-zh-glow: rgba(59, 130, 246, 0.35);
+      --mode-zh-text: #60a5fa;
+
+      /* 英翻中主題色 (綠色調) */
+      --mode-en-border: #10b981;
+      --mode-en-glow: rgba(16, 185, 129, 0.35);
+      --mode-en-text: #34d399;
+
+      /* 大字幕動態變數 */
+      --trans-font-size: 56px;
+      --orig-font-size: 28px;
+    }
+
+    /* 白天防反光高對比模式 */
+    body.light-theme {
+      --bg-main: #f8fafc;
+      --card-bg: #ffffff;
+      --card-border: #2563eb;
+      --text-highlight: #1d4ed8;
+      --text-sub: #475569;
+      --text-white: #0f172a;
+      --mode-zh-border: #2563eb;
+      --mode-zh-glow: rgba(37, 99, 235, 0.15);
+      --mode-zh-text: #1d4ed8;
+      --mode-en-border: #059669;
+      --mode-en-glow: rgba(5, 150, 105, 0.15);
+      --mode-en-text: #047857;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-white);
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* 確保全螢幕不產生滾動條，絕不遮擋字幕 */
+    }
+
+    /* 頂部觸控工具列 */
+    header {
+      background: var(--card-bg);
+      border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+      padding: 10px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 22px;
+      font-weight: 800;
+    }
+
+    .live-status-pill {
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 999px;
+      font-weight: bold;
+      background: #ef4444;
+      color: white;
+      animation: pulse 1.5s infinite;
+      display: none;
+      align-items: center;
+      gap: 6px;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.96); }
+    }
+
+    .controls-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 觸控大按鈕 */
+    .btn {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-white);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      padding: 10px 16px;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease-in-out;
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+    }
+
+    .btn-mic {
+      background: #2563eb;
+      border-color: #3b82f6;
+      color: white;
+    }
+    .btn-mic.recording {
+      background: #dc2626;
+      border-color: #ef4444;
+    }
+
+    .btn-accent {
+      background: #0284c7;
+      border-color: #38bdf8;
+      color: white;
+    }
+
+    /* 主畫面：單一全寬對話框，永不超出螢幕 */
+    main {
+      flex: 1;
+      padding: 20px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+      justify-content: stretch;
+    }
+
+    /* 單一主翻譯大卡片 */
+    .single-box {
+      flex: 1;
+      background: var(--card-bg);
+      border-radius: 24px;
+      border: 4px solid var(--mode-zh-border);
+      box-shadow: 0 0 35px var(--mode-zh-glow);
+      display: flex;
+      flex-direction: column;
+      padding: 24px 32px;
+      position: relative;
+      transition: all 0.3s ease;
+      overflow: hidden;
+    }
+
+    .single-box.mode-en {
+      border-color: var(--mode-en-border);
+      box-shadow: 0 0 35px var(--mode-en-glow);
+    }
+
+    /* 卡片頂部方向標記列 */
+    .box-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+      flex-shrink: 0;
+    }
+
+    .direction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 20px;
+      font-weight: 800;
+      padding: 6px 18px;
+      border-radius: 30px;
+      background: rgba(59, 130, 246, 0.2);
+      color: var(--text-highlight);
+      border: 2px solid var(--mode-zh-border);
+    }
+
+    .single-box.mode-en .direction-badge {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--mode-en-text);
+      border-color: var(--mode-en-border);
+    }
+
+    .box-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    /* 翻譯主文字區 (超大字體，全場焦點) */
+    .translation-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      overflow-y: auto;
+      padding: 10px 0;
+      scroll-behavior: smooth;
+    }
+
+    .translation-area::-webkit-scrollbar {
+      width: 8px;
+    }
+    .translation-area::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 4px;
+    }
+
+    .trans-label {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .trans-text {
+      font-size: var(--trans-font-size);
+      font-weight: 900;
+      line-height: 1.35;
+      color: var(--text-highlight);
+      letter-spacing: 0.5px;
+      word-break: break-word;
+      transition: font-size 0.2s ease;
+    }
+
+    .single-box.mode-en .trans-text {
+      color: var(--mode-en-text);
+    }
+
+    /* 原文輔助區 (位於下方，節省空間) */
+    .original-area {
+      flex-shrink: 0;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 16px;
+      padding: 14px 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      margin-top: 14px;
+    }
+
+    .orig-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text-sub);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .orig-text {
+      font-size: var(--orig-font-size);
+      font-weight: 600;
+      line-height: 1.4;
+      color: var(--text-white);
+      word-break: break-word;
+    }
+
+    /* 即時聽取提詞 (Interim) 動態提示 */
+    .live-interim-tag {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fbbf24;
+      font-style: italic;
+      margin-top: 6px;
+      display: none;
+    }
+
+    /* 底部狀態列 */
+    footer {
+      background: var(--card-bg);
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 8px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      color: var(--text-sub);
+      flex-shrink: 0;
+    }
+
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+    .status-dot.inactive {
+      background: #ef4444;
+    }
+
+    /* 全螢幕響應 */
+    :fullscreen header {
+      padding: 8px 24px;
+    }
+    :fullscreen main {
+      padding: 14px 24px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 頂部控制面板 -->
+  <header>
+    <div class="brand-title">
+      <span>🏫 雙語智慧課堂・即時翻譯大字幕</span>
+      <span class="live-status-pill" id="liveBadge">● 正在收音辨識</span>
+    </div>
+
+    <div class="controls-group">
+      <!-- 麥克風開關 -->
+      <button class="btn btn-mic" id="btnMicToggle" title="點擊開啟/暫停麥克風">
+        <span id="micIcon">🎙️</span>
+        <span id="micText">啟動即時收音</span>
+      </button>
+
+      <!-- 新句子/清空區塊 -->
+      <button class="btn btn-accent" id="btnNewBlock" title="換新的一句話/換新段落">
+        <span>🔄</span> 換新段落
+      </button>
+
+      <!-- 字體放大縮小 -->
+      <button class="btn" id="btnFontUp" title="加大翻譯字幕">
+        <span>🔍+</span> 字體放大
+      </button>
+      <button class="btn" id="btnFontDown" title="縮小翻譯字幕">
+        <span>🔍-</span> 字體縮小
+      </button>
+
+      <!-- 主題與全螢幕 -->
+      <button class="btn" id="btnTheme" title="白天/夜間高對比模式">
+        <span id="themeIcon">☀️</span> 白天模式
+      </button>
+      <button class="btn" id="btnFullscreen" title="教室大螢幕全螢幕投影 (F11)">
+        <span>⛶</span> 全螢幕
+      </button>
+    </div>
+  </header>
+
+  <!-- 主畫面：無歷史紀錄堆疊、單一滿版大字幕對話框 -->
+  <main>
+    <div class="single-box" id="mainBox">
+      <!-- 頂部資訊與方向 -->
+      <div class="box-header">
+        <div class="direction-badge" id="directionBadge">
+          <span id="dirFlag">🇹🇼 ➔ 🇺🇸</span>
+          <span id="dirText">中翻英 (Chinese ➔ English)</span>
+        </div>
+        <div class="box-actions">
+          <button class="btn" id="btnSpeak" title="語音朗讀翻譯內容">
+            <span>🔊 朗讀發音</span>
+          </button>
+          <button class="btn" id="btnClear" title="清空目前內容">
+            <span>🗑️ 清空</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 核心翻譯大字區 (全螢幕最醒目，連貫多句在同一框內) -->
+      <div class="translation-area">
+        <div class="trans-label">
+          <span>🔤 即時翻譯結果 (TRANSLATION)</span>
+        </div>
+        <div class="trans-text" id="transOutput">
+          請點擊「啟動即時收音」，開始說話即可在此看到超大字幕翻譯...
+        </div>
+      </div>
+
+      <!-- 原文輔助區 (收攏在下方，不佔據大字版面) -->
+      <div class="original-area">
+        <div class="orig-label">
+          <span>🗣️ 語音辨識原文 (ORIGINAL SPEECH)</span>
+          <span id="charCount">0 字</span>
+        </div>
+        <div class="orig-text" id="origOutput">
+          （尚未收音）
+        </div>
+        <!-- 正在說話當下的即時辨識 (Interim) -->
+        <div class="live-interim-tag" id="interimText"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 底部狀態列 -->
+  <footer>
+    <div class="status-indicator">
+      <span class="status-dot inactive" id="statusDot"></span>
+      <span id="statusInfo">麥克風待命中</span>
+      <span>｜ 單一對話框自適應模式（多句自動以標點符號串接，絕不超出螢幕）</span>
+      <span>｜ 英文 "I" 自動大寫修正</span>
+    </div>
+    <div>
+      <span>觸控大白板專用 ｜ 支援即時縮放字體</span>
+    </div>
+  </footer>
+
+  <script>
+    // ==========================================
+    // 全域變數
+    // ==========================================
+    let isListening = false;
+    let autoRestart = true;
+    let recognition = null;
+    let currentTransFontSize = 56; // 預設超大字幕
+    let activeDirection = 'zh-to-en'; // 'zh-to-en' 或 'en-to-zh'
+
+    // 當前同一個對話框中串接的原文與譯文陣列
+    let currentOriginalSentences = [];
+    let currentTranslatedSentences = [];
+
+    // DOM 快取
+    const btnMicToggle = document.getElementById('btnMicToggle');
+    const micIcon = document.getElementById('micIcon');
+    const micText = document.getElementById('micText');
+    const liveBadge = document.getElementById('liveBadge');
+    const statusDot = document.getElementById('statusDot');
+    const statusInfo = document.getElementById('statusInfo');
+    const btnNewBlock = document.getElementById('btnNewBlock');
+    const btnClear = document.getElementById('btnClear');
+    const btnSpeak = document.getElementById('btnSpeak');
+    const btnFontUp = document.getElementById('btnFontUp');
+    const btnFontDown = document.getElementById('btnFontDown');
+    const btnTheme = document.getElementById('btnTheme');
+    const themeIcon = document.getElementById('themeIcon');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+
+    const mainBox = document.getElementById('mainBox');
+    const directionBadge = document.getElementById('directionBadge');
+    const dirFlag = document.getElementById('dirFlag');
+    const dirText = document.getElementById('dirText');
+    const transOutput = document.getElementById('transOutput');
+    const origOutput = document.getElementById('origOutput');
+    const interimText = document.getElementById('interimText');
+    const charCount = document.getElementById('charCount');
+
+    // ==========================================
+    // 檢查瀏覽器 Web Speech API
+    // ==========================================
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("⚠️ 您的瀏覽器尚未支援 Web Speech API，請使用 Google Chrome 或 Microsoft Edge 開啟！");
+      statusInfo.textContent = "瀏覽器不支援 Web Speech API，請用 Chrome/Edge";
+    }
+
+    function initSpeech() {
+      if (!SpeechRecognition) return;
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.maxAlternatives = 1;
+      recognition.lang = 'zh-TW'; // Chrome 設 zh-TW 可同時辨識國語與流暢英文
+
+      recognition.onstart = () => {
+        isListening = true;
+        updateUI(true);
+      };
+
+      recognition.onresult = async (event) => {
+        let interim = '';
+        let finalStr = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          if (item[0] && item[0].transcript) {
+            if (item.isFinal) {
+              finalStr += item[0].transcript;
+            } else {
+              interim += item[0].transcript;
+            }
+          }
+        }
+
+        // 正在講話的過程（即時預覽）
+        if (interim.trim()) {
+          interimText.style.display = 'block';
+          interimText.textContent = `🎙️ 正在說: ${interim}`;
+        } else {
+          interimText.style.display = 'none';
+        }
+
+        // 當講完一句話 (isFinal)
+        if (finalStr.trim()) {
+          interimText.style.display = 'none';
+          await processSentence(finalStr.trim());
+        }
+      };
+
+      recognition.onerror = (e) => {
+        console.warn('語音辨識提示:', e.error);
+        if (e.error === 'not-allowed') {
+          alert('請允許麥克風權限以利教室收音！');
+          autoRestart = false;
+          updateUI(false);
+        }
+      };
+
+      recognition.onend = () => {
+        if (autoRestart && isListening) {
+          try { recognition.start(); } catch (err) {}
+        } else {
+          updateUI(false);
+        }
+      };
+    }
+
+    // ==========================================
+    // 語言自動偵測 (中文 vs 英文)
+    // ==========================================
+    function detectLanguage(text) {
+      const chineseChars = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+      const englishChars = (text.match(/[a-zA-Z]/g) || []).length;
+
+      // 若有中文字且佔比顯著，判定為中文發話（中翻英）
+      if (chineseChars > 0 && chineseChars >= englishChars * 0.3) {
+        return 'zh';
+      }
+      if (englishChars > chineseChars) {
+        return 'en';
+      }
+      return 'zh';
+    }
+
+    // ==========================================
+    // 英文文法與 "I" 大寫修正函式
+    // ==========================================
+    function formatEnglishGrammar(text) {
+      if (!text) return '';
+      let res = text.trim();
+
+      // 1. 強制將孤立小寫 'i' 轉換為大寫 'I'
+      res = res.replace(/\bi\b/g, 'I');
+
+      // 2. 常見代名詞縮寫修復：i'm -> I'm, i've -> I've, i'll -> I'll, i'd -> I'd
+      res = res.replace(/\bi'm\b/gi, "I'm");
+      res = res.replace(/\bi'd\b/gi, "I'd");
+      res = res.replace(/\bi'll\b/gi, "I'll");
+      res = res.replace(/\bi've\b/gi, "I've");
+
+      // 3. 句首第一個英文字母大寫
+      res = res.replace(/(^\s*|[.!?]\s+)([a-z])/g, (m, p1, p2) => p1 + p2.toUpperCase());
+
+      // 4. 清理前後多餘空格
+      return res;
+    }
+
+    // ==========================================
+    // 免費翻譯核心 (Google 端點 + MyMemory 後備)
+    // ==========================================
+    async function translateText(text, sl, tl) {
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(text)}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('API 無法存取');
+        const data = await res.json();
+        let translated = '';
+        if (data && data[0]) {
+          data[0].forEach(item => {
+            if (item[0]) translated += item[0];
+          });
+        }
+        return translated || text;
+      } catch (e) {
+        console.warn('備用翻譯端點連線中...', e);
+        try {
+          const pair = (sl === 'zh' ? 'zh|en' : 'en|zh-TW');
+          const fb = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`);
+          const fbData = await fb.json();
+          if (fbData && fbData.responseData) {
+            return fbData.responseData.translatedText;
+          }
+        } catch (err2) {}
+        return text;
+      }
+    }
+
+    // 清理字串末端的句號或逗點，避免串接時符號重疊
+    function cleanPunctuation(str) {
+      return str.replace(/[,，.。!！?？\s]+$/, '');
+    }
+
+    // ==========================================
+    // 核心處理：將多句話串接在同一對話框中
+    // ==========================================
+    async function processSentence(rawSentence) {
+      const lang = detectLanguage(rawSentence);
+      const isChinese = (lang === 'zh');
+      const newDirection = isChinese ? 'zh-to-en' : 'en-to-zh';
+
+      // 如果語系方向改變（例如中師講完，換外師講話），自動開啟新段落
+      if (currentOriginalSentences.length > 0 && activeDirection !== newDirection) {
+        currentOriginalSentences = [];
+        currentTranslatedSentences = [];
+      }
+      activeDirection = newDirection;
+
+      // 更新方向主題外觀
+      updateDirectionUI(newDirection);
+
+      // 呼叫翻譯
+      const sourceLang = isChinese ? 'zh' : 'en';
+      const targetLang = isChinese ? 'en' : 'zh-TW';
+      let translated = await translateText(rawSentence, sourceLang, targetLang);
+
+      // 若為英文結果，嚴格確保 "I" 與句首大寫
+      if (isChinese) {
+        translated = formatEnglishGrammar(translated);
+      }
+
+      // 將新句子加入目前的陣列中（同一對話框）
+      currentOriginalSentences.push(cleanPunctuation(rawSentence));
+      currentTranslatedSentences.push(cleanPunctuation(translated));
+
+      // 根據語言特性，將多句話用逗號或句號串接在同一個對話框
+      let combinedOriginal = '';
+      let combinedTranslation = '';
+
+      if (isChinese) {
+        // 原文為中文：以逗號串接
+        combinedOriginal = currentOriginalSentences.join('，') + '。';
+        // 譯文為英文：以逗號與空格串接，並修飾英文
+        combinedTranslation = currentTranslatedSentences.join(', ') + '.';
+        combinedTranslation = formatEnglishGrammar(combinedTranslation);
+      } else {
+        // 原文為英文：以逗號與空格串接
+        combinedOriginal = currentOriginalSentences.join(', ') + '.';
+        combinedOriginal = formatEnglishGrammar(combinedOriginal);
+        // 譯文為中文：以逗號串接
+        combinedTranslation = currentTranslatedSentences.join('，') + '。';
+      }
+
+      // 渲染至大螢幕
+      transOutput.textContent = combinedTranslation;
+      origOutput.textContent = combinedOriginal;
+      charCount.textContent = `${combinedOriginal.length} 字`;
+    }
+
+    // 更新方向主題樣式
+    function updateDirectionUI(dir) {
+      if (dir === 'zh-to-en') {
+        mainBox.classList.remove('mode-en');
+        dirFlag.textContent = '🇹🇼 ➔ 🇺🇸';
+        dirText.textContent = '中翻英 (Chinese ➔ English)';
+      } else {
+        mainBox.classList.add('mode-en');
+        dirFlag.textContent = '🇺🇸 ➔ 🇹🇼';
+        dirText.textContent = '英翻中 (English ➔ Chinese)';
+      }
+    }
+
+    // ==========================================
+    // UI 控制與按鈕事件
+    // ==========================================
+    function updateUI(listening) {
+      if (listening) {
+        btnMicToggle.classList.add('recording');
+        micIcon.textContent = '⏹️';
+        micText.textContent = '暫停收音';
+        liveBadge.style.display = 'inline-flex';
+        statusDot.classList.remove('inactive');
+        statusInfo.textContent = '麥克風持續連線聆聽中 (請自然說話)...';
+      } else {
+        btnMicToggle.classList.remove('recording');
+        micIcon.textContent = '🎙️';
+        micText.textContent = '啟動即時收音';
+        liveBadge.style.display = 'none';
+        statusDot.classList.add('inactive');
+        statusInfo.textContent = '已暫停收音';
+      }
+    }
+
+    // 開關麥克風
+    btnMicToggle.addEventListener('click', () => {
+      if (!recognition) initSpeech();
+
+      if (isListening) {
+        autoRestart = false;
+        isListening = false;
+        recognition.stop();
+        updateUI(false);
+      } else {
+        autoRestart = true;
+        try {
+          recognition.start();
+        } catch (e) {}
+      }
+    });
+
+    // 換新段落 (保留在螢幕但清空內部句子緩衝，重新開始下一段)
+    btnNewBlock.addEventListener('click', () => {
+      currentOriginalSentences = [];
+      currentTranslatedSentences = [];
+      transOutput.textContent = '已換新段落，請開始發話...';
+      origOutput.textContent = '（等待收音）';
+      charCount.textContent = '0 字';
+    });
+
+    // 清空
+    btnClear.addEventListener('click', () => {
+      currentOriginalSentences = [];
+      currentTranslatedSentences = [];
+      transOutput.textContent = '畫面已清空，請說話...';
+      origOutput.textContent = '（尚未收音）';
+      charCount.textContent = '0 字';
+      interimText.style.display = 'none';
+    });
+
+    // 語音朗讀 TTS
+    btnSpeak.addEventListener('click', () => {
+      const textToSpeak = transOutput.textContent.trim();
+      if (!textToSpeak || textToSpeak.includes('請點擊') || textToSpeak.includes('畫面已清空') || textToSpeak.includes('已換新段落')) {
+        return;
+      }
+      if (!('speechSynthesis' in window)) return;
+
+      window.speechSynthesis.cancel();
+      const utter = new SpeechSynthesisUtterance(textToSpeak);
+      // 若是中翻英，朗讀英文發音；若是英翻中，朗讀中文發音
+      utter.lang = (activeDirection === 'zh-to-en') ? 'en-US' : 'zh-TW';
+      utter.rate = 0.9;
+      window.speechSynthesis.speak(utter);
+    });
+
+    // 字體縮放控制
+    btnFontUp.addEventListener('click', () => {
+      if (currentTransFontSize < 96) {
+        currentTransFontSize += 6;
+        applyFontSize();
+      }
+    });
+
+    btnFontDown.addEventListener('click', () => {
+      if (currentTransFontSize > 32) {
+        currentTransFontSize -= 6;
+        applyFontSize();
+      }
+    });
+
+    function applyFontSize() {
+      document.documentElement.style.setProperty('--trans-font-size', `${currentTransFontSize}px`);
+      document.documentElement.style.setProperty('--orig-font-size', `${Math.max(20, Math.round(currentTransFontSize * 0.45))}px`);
+    }
+
+    // 主題切換 (白天/夜間高對比)
+    btnTheme.addEventListener('click', () => {
+      document.body.classList.toggle('light-theme');
+      const isLight = document.body.classList.contains('light-theme');
+      themeIcon.textContent = isLight ? '🌙' : '☀️';
+      btnTheme.innerHTML = `<span>${isLight ? '🌙' : '☀️'}</span> ${isLight ? '夜間模式' : '白天模式'}`;
+    });
+
+    // 全螢幕切換
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    });
+
+    // 初始化啟動
+    initSpeech();
+  </script>
+</body>
+</html>
